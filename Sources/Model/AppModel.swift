@@ -550,15 +550,39 @@ final class AppModel: ObservableObject {
         diag("ctrl", "preset → \(presets[idx].name)")
     }
 
-    /// Light the KeyLab's Select-button LED for the selected track (MCU feedback:
-    /// NoteOn the button's note, velocity 127 = on, 0 = off).
+    // The 9 under-fader Select buttons on the KeyLab mkII have RGB LEDs, addressed
+    // by Arturia's own LED SysEx (LED IDs 0x22…0x2A, one per fader). We paint each
+    // Select button with its DAW track color, and flip the selected track to white.
+    //   colour: F0 00 20 6B 7F 42 02 00 16 <LED> <R> <G> <B> F7   (R/G/B 0…0x1F)
+    private static let selectLEDBase: UInt8 = 0x22   // Select 1 → 0x22, Select 2 → 0x23, …
+
+    /// Reflect track colors (and the white selection) on the KeyLab Select buttons.
     func updateSelectLEDs() {
         let selected = tracks.firstIndex { $0.id == selectedTrackID }
         for i in 0..<8 {
-            let on: UInt8 = (i == selected) ? 127 : 0
-            midi.send([0x90, UInt8(24 + i), on], toPortNamed: "DAW")
+            let led = Self.selectLEDBase + UInt8(i)
+            var r: UInt8 = 0, g: UInt8 = 0, b: UInt8 = 0
+            if i == selected {
+                r = 0x1F; g = 0x1F; b = 0x1F                 // selected → bright white
+            } else if i < tracks.count {
+                (r, g, b) = Self.led5bit(tracks[i].color)    // unselected → its track color (dimmed)
+            }
+            midi.send([0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x02, 0x00, 0x16, led, r, g, b, 0xF7],
+                      toPortNamed: "DAW")
         }
         updateButtonLEDs()   // refresh Mute LED for the newly-selected track
+    }
+
+    /// Map a SwiftUI Color to the KeyLab's 5-bit (0…0x1F) per-channel RGB, dimmed
+    /// a little so an unselected track color sits clearly below the white selection.
+    private static func led5bit(_ color: Color) -> (UInt8, UInt8, UInt8) {
+        let (r, g, b, _) = rgba(of: color)
+        func q(_ v: CGFloat) -> UInt8 {
+            let scaled = Double(v) * 0.7 * 31.0
+            let clamped = max(0.0, min(31.0, scaled.rounded()))
+            return UInt8(clamped)
+        }
+        return (q(r), q(g), q(b))
     }
 
     private func nudgeParameter(_ encoderIndex: Int, by delta: Int) {
