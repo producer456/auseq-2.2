@@ -30,11 +30,13 @@ final class AppModel: ObservableObject {
         // When the KeyLab (re)appears in CoreMIDI, re-send LED feedback to wake its
         // dormant DAW port — otherwise it won't send until another host opens it.
         midi.onSetupChanged = { [weak self] in
+            self?.clearPadLEDs()
             self?.updateSelectLEDs()
             self?.updateButtonLEDs()
             self?.updateLCD()
         }
         midi.start()
+        clearPadLEDs()       // clear the parked pad-color experiment
         updateSelectLEDs()   // output port exists now; reflect the initial selection
         updateLCD()          // and show the current sound on the KeyLab LCD
 
@@ -560,24 +562,31 @@ final class AppModel: ObservableObject {
         diag("ctrl", "preset → \(presets[idx].name)")
     }
 
-    /// Light the KeyLab's Select-button LED for the selected track (MCU feedback:
-    /// NoteOn the button's note, velocity 127 = on, 0 = off). These under-fader
-    /// buttons are single-color (the RGB LEDs on the mkII are the 16 pads), so we
-    /// just light the selected track's button. Per-track *color* lives on the pads
-    /// (see updatePadLEDs).
+    /// Light the KeyLab's Select-button LEDs. The plain MCU NoteOn (notes 24-31)
+    /// doesn't drive them in this mode, but Arturia's own LED SysEx does (same path
+    /// that lights the pads). Per Arturia's table the Select buttons (LED 0x22-0x29)
+    /// are "only on/off full brightness white" — color won't latch (the MCU select
+    /// machine wipes it) — so we light the selected track's button white via the
+    /// monochrome command:  F0 00 20 6B 7F 42 02 00 10 <LED> <BRIGHTNESS> F7.
+    private static let selectLEDBase: UInt8 = 0x22   // Select 1 → 0x22 … Select 8 → 0x29
+
     func updateSelectLEDs() {
         let selected = tracks.firstIndex { $0.id == selectedTrackID }
         for i in 0..<8 {
-            midi.send([0x90, UInt8(24 + i), i == selected ? 127 : 0], toPortNamed: "DAW")
+            let led = Self.selectLEDBase + UInt8(i)
+            let bright: UInt8 = (i == selected) ? 0x7F : 0x00
+            midi.send([0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x02, 0x00, 0x10, led, bright, 0xF7],
+                      toPortNamed: "DAW")
+            midi.send([0x90, UInt8(24 + i), i == selected ? 127 : 0], toPortNamed: "DAW")  // MCU, harmless
         }
-        updatePadLEDs()
         updateButtonLEDs()   // refresh Mute LED for the newly-selected track
     }
 
-    /// Paint the 16 RGB performance pads with the track colors: pad N = track N's
-    /// DAW color, bright white for the selected track. Arturia color SysEx:
-    ///   F0 00 20 6B 7F 42 02 00 16 <LED> <R> <G> <B> F7   (R/G/B 0…0x1F)
-    /// Pad LED IDs on the mkII run 0x70…0x7F for pads 1…16.
+    /// Paint the 16 RGB performance pads with the track colors (pad N = track N's
+    /// color, white for the selected track). Verified to latch in DAW mode — parked
+    /// for a future feature; not called for now (we cleared them off below).
+    ///   color: F0 00 20 6B 7F 42 02 00 16 <LED> <R> <G> <B> F7   (R/G/B 0…0x1F)
+    ///   Pad LED IDs 0x70…0x7F for pads 1…16.
     private static let padLEDBase: UInt8 = 0x70
 
     func updatePadLEDs() {
@@ -586,11 +595,19 @@ final class AppModel: ObservableObject {
             let led = Self.padLEDBase + UInt8(i)
             var r: UInt8 = 0, g: UInt8 = 0, b: UInt8 = 0
             if i == selected {
-                r = 0x1F; g = 0x1F; b = 0x1F                 // selected → bright white
+                r = 0x1F; g = 0x1F; b = 0x1F
             } else if i < tracks.count {
-                (r, g, b) = Self.led5bit(tracks[i].color)    // a track → its color (dimmed)
+                (r, g, b) = Self.led5bit(tracks[i].color)
             }
             midi.send([0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x02, 0x00, 0x16, led, r, g, b, 0xF7],
+                      toPortNamed: "DAW")
+        }
+    }
+
+    /// Turn all 16 pad LEDs off (clears the parked track-color experiment).
+    func clearPadLEDs() {
+        for i in 0..<16 {
+            midi.send([0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x02, 0x00, 0x16, Self.padLEDBase + UInt8(i), 0, 0, 0, 0xF7],
                       toPortNamed: "DAW")
         }
     }
