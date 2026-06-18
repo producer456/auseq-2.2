@@ -123,6 +123,23 @@ final class MIDIManager: ObservableObject {
         }
     }
 
+    /// Show two lines of text on the KeyLab mkII's LCD (Arturia's own display
+    /// SysEx — works in DAW/Analog Lab mode, ignored only in User mode):
+    ///   F0 00 20 6B 7F 42 04 00 60 01 <line1 ascii> 00 02 <line2 ascii> 00 F7
+    /// Each line is ASCII, max 16 chars (extra is truncated; non-ASCII dropped).
+    @discardableResult
+    func sendLCD(_ line1: String, _ line2: String = "", toPortNamed needle: String = "DAW") -> Bool {
+        func ascii(_ s: String) -> [UInt8] {
+            String(s.prefix(16)).unicodeScalars.compactMap { $0.value > 0 && $0.value < 0x7F ? UInt8($0.value) : nil }
+        }
+        var bytes: [UInt8] = [0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x04, 0x00, 0x60, 0x01]
+        bytes += ascii(line1)
+        bytes += [0x00, 0x02]
+        bytes += ascii(line2)
+        bytes += [0x00, 0xF7]
+        return send(bytes, toPortNamed: needle)
+    }
+
     private func connectAllSources() {
         let count = MIDIGetNumberOfSources()
         var names: [String] = []

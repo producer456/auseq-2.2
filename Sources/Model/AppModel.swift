@@ -10,7 +10,7 @@ import AudioToolbox
 final class AppModel: ObservableObject {
 
     @Published var tracks: [Track] = []
-    @Published var selectedTrackID: UUID? { didSet { updateSelectLEDs() } }
+    @Published var selectedTrackID: UUID? { didSet { updateSelectLEDs(); updateLCD() } }
 
     let audio = AudioEngine()
     let midi = MIDIManager()
@@ -32,9 +32,11 @@ final class AppModel: ObservableObject {
         midi.onSetupChanged = { [weak self] in
             self?.updateSelectLEDs()
             self?.updateButtonLEDs()
+            self?.updateLCD()
         }
         midi.start()
         updateSelectLEDs()   // output port exists now; reflect the initial selection
+        updateLCD()          // and show the current sound on the KeyLab LCD
 
         // Sequencer playback → instrument; recording lands on the selected track.
         sequencer.recordTrackID = { [weak self] in
@@ -144,6 +146,7 @@ final class AppModel: ObservableObject {
     private var presetFlashGen = 0
     func flashPreset(_ name: String) {
         presetFlash = name
+        lcdFlash(name, "preset")   // mirror the on-screen preset flash to the KeyLab LCD
         presetFlashGen += 1
         let gen = presetFlashGen
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
@@ -155,7 +158,7 @@ final class AppModel: ObservableObject {
     // MARK: - Sound browse (the big wheel — driven on-screen and by the KeyLab jog)
 
     /// Index into the instrument list the big wheel is currently showing.
-    @Published var browseIndex = 0
+    @Published var browseIndex = 0 { didSet { if browseIndex != oldValue { updateLCD() } } }
 
     /// Point the wheel at the selected track's loaded instrument (called on track
     /// change / after a load), so turning the jog browses from there.
@@ -214,6 +217,7 @@ final class AppModel: ObservableObject {
             track.instrumentGen += 1
             self?.paramBank = 0
             self?.syncBrowseToSelection()
+            self?.lcdFlash(name, "loaded")   // confirm the load on the KeyLab LCD
             // ContentView observes AppModel, not the individual Track, so the
             // async load completing on a Track doesn't refresh it. Nudge AppModel
             // to re-render now that the AU exists (otherwise the plugin controls
@@ -556,37 +560,39 @@ final class AppModel: ObservableObject {
         diag("ctrl", "preset → \(presets[idx].name)")
     }
 
-    // The 9 under-fader Select buttons on the KeyLab mkII have RGB LEDs, addressed
-    // by Arturia's own LED SysEx (LED IDs 0x22…0x2A, one per fader). We paint each
-    // Select button with its DAW track color, and flip the selected track to white.
-    //   colour: F0 00 20 6B 7F 42 02 00 16 <LED> <R> <G> <B> F7   (R/G/B 0…0x1F)
-    private static let selectLEDBase: UInt8 = 0x22   // Select 1 → 0x22, Select 2 → 0x23, …
-
-    /// Reflect track colors (and the white selection) on the KeyLab Select buttons.
-    ///
-    /// In MCU/DAW mode the device keeps a Select LED *off* unless the host tells it
-    /// the LED is lit via the MCU NoteOn feedback — so a bare color SysEx only flashes
-    /// then gets blanked on the firmware's next refresh. We therefore hold the MCU
-    /// "on" state (NoteOn 127) for every track button AND paint the color on top, so
-    /// the LED stays lit and keeps our hue.
+    /// Light the KeyLab's Select-button LED for the selected track (MCU feedback:
+    /// NoteOn the button's note, velocity 127 = on, 0 = off). These under-fader
+    /// buttons are single-color (the RGB LEDs on the mkII are the 16 pads), so we
+    /// just light the selected track's button. Per-track *color* lives on the pads
+    /// (see updatePadLEDs).
     func updateSelectLEDs() {
         let selected = tracks.firstIndex { $0.id == selectedTrackID }
         for i in 0..<8 {
-            let hasTrack = i < tracks.count
-            // 1) MCU lit-state: keep every track button on so the firmware doesn't blank it.
-            midi.send([0x90, UInt8(24 + i), hasTrack ? 127 : 0], toPortNamed: "DAW")
-            // 2) Arturia colour paint on the same button (LED ID 0x22+).
-            let led = Self.selectLEDBase + UInt8(i)
+            midi.send([0x90, UInt8(24 + i), i == selected ? 127 : 0], toPortNamed: "DAW")
+        }
+        updatePadLEDs()
+        updateButtonLEDs()   // refresh Mute LED for the newly-selected track
+    }
+
+    /// Paint the 16 RGB performance pads with the track colors: pad N = track N's
+    /// DAW color, bright white for the selected track. Arturia color SysEx:
+    ///   F0 00 20 6B 7F 42 02 00 16 <LED> <R> <G> <B> F7   (R/G/B 0…0x1F)
+    /// Pad LED IDs on the mkII run 0x70…0x7F for pads 1…16.
+    private static let padLEDBase: UInt8 = 0x70
+
+    func updatePadLEDs() {
+        let selected = tracks.firstIndex { $0.id == selectedTrackID }
+        for i in 0..<16 {
+            let led = Self.padLEDBase + UInt8(i)
             var r: UInt8 = 0, g: UInt8 = 0, b: UInt8 = 0
             if i == selected {
                 r = 0x1F; g = 0x1F; b = 0x1F                 // selected → bright white
-            } else if hasTrack {
-                (r, g, b) = Self.led5bit(tracks[i].color)    // unselected → its track color (dimmed)
+            } else if i < tracks.count {
+                (r, g, b) = Self.led5bit(tracks[i].color)    // a track → its color (dimmed)
             }
             midi.send([0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x02, 0x00, 0x16, led, r, g, b, 0xF7],
                       toPortNamed: "DAW")
         }
-        updateButtonLEDs()   // refresh Mute LED for the newly-selected track
     }
 
     /// Map a SwiftUI Color to the KeyLab's 5-bit (0…0x1F) per-channel RGB, dimmed
@@ -601,6 +607,44 @@ final class AppModel: ObservableObject {
         return (q(r), q(g), q(b))
     }
 
+    // MARK: - KeyLab LCD (mirror the big-knob screen onto the hardware display)
+
+    /// Base screen: the sound browser — line 1 = browsed/loaded instrument, line 2 =
+    /// a load hint while a new sound is queued, else the track name. (Param-edit and
+    /// preset readouts transiently override this, matching the on-screen wheel.)
+    func updateLCD() {
+        guard !lcdOverridden else { return }   // a transient overlay owns the screen right now
+        let insts = browser.instruments
+        let count = insts.count
+        let loaded = selectedTrack?.instrumentName
+        let hasInst = selectedTrack?.hasInstrument ?? false
+        let browsed = insts.indices.contains(browseIndex) ? insts[browseIndex].name : nil
+        let title = browsed ?? (hasInst ? (loaded ?? "—") : "LOAD")
+        let pending = browsed != nil && (!hasInst || browsed != loaded)
+        let line2 = count == 0 ? "no sounds"
+                   : (pending ? "press to load" : (selectedTrack?.name ?? ""))
+        midi.sendLCD(title, line2)
+    }
+
+    /// True while a preset/param readout is temporarily shown; suppresses the base
+    /// `updateLCD()` so it doesn't clobber the overlay until it expires.
+    private var lcdOverridden = false
+    private var lcdOverrideGen = 0
+
+    /// Transiently show two lines (a turned param, a stepped preset), then fall back
+    /// to the base screen after `hold` seconds — mirrors the on-screen wheel overlay.
+    func lcdFlash(_ line1: String, _ line2: String, hold: Double = 1.4) {
+        midi.sendLCD(line1, line2)
+        lcdOverridden = true
+        lcdOverrideGen += 1
+        let gen = lcdOverrideGen
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
+            guard let self, self.lcdOverrideGen == gen else { return }
+            self.lcdOverridden = false
+            self.updateLCD()
+        }
+    }
+
     private func nudgeParameter(_ encoderIndex: Int, by delta: Int) {
         guard delta != 0, encoderIndex < Self.encoderCount,   // 8 knobs/page; ignore a 9th encoder
               let au = selectedAU,
@@ -613,5 +657,6 @@ final class AppModel: ObservableObject {
         let step = span / 64                          // ~64 ticks across the full range
         let nv = min(p.maxValue, max(p.minValue, p.value + Float(delta) * step))
         p.setValue(nv, originator: nil)               // nil → the param-list observer updates the UI
+        lcdFlash(p.displayName, p.string(fromValue: nil) , hold: 1.0)   // live readout on the KeyLab LCD
     }
 }
