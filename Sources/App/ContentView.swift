@@ -95,17 +95,18 @@ struct ContentView: View {
             faceplate.ignoresSafeArea()
             VStack(spacing: 0) {
                 woodPanel
-                // Arranger runs full-width to match the wood band above it; the wood
-                // curves down around its top corners so the top joins the sides.
+                // Arranger = a screen laid into the white material: inset with side +
+                // bottom borders and a recessed bevel; the wood band above curves its
+                // bottom corners inward to meet it, and wood wraps the top corners.
                 contentColumn
-                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 0,
-                                                      bottomTrailingRadius: 0, topTrailingRadius: 18, style: .continuous))
-                    .overlay(alignment: .topLeading) { WoodFillet(tone: woodTone).frame(width: 18, height: 18) }
-                    .overlay(alignment: .topTrailing) { WoodFillet(tone: woodTone, mirrored: true).frame(width: 18, height: 18) }
-                    .padding(.bottom, keyboardVisible ? 6 : 12)
+                    .recessedPanel(radius: 16)
+                    .overlay(alignment: .topLeading) { WoodFillet(tone: woodTone).frame(width: 16, height: 16) }
+                    .overlay(alignment: .topTrailing) { WoodFillet(tone: woodTone, mirrored: true).frame(width: 16, height: 16) }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, keyboardVisible ? 6 : 14)
                 if keyboardVisible {
                     PianoKeyboardView(model: model, height: 190)
-                        .padding(.bottom, 12)
+                        .padding(.horizontal, 14).padding(.bottom, 12)
                 }
             }
         }
@@ -278,8 +279,14 @@ struct ContentView: View {
                          onQuantizeAll: { model.quantizeAll() },
                          compact: isPhone, tone: woodTone)
         }
-        // Wood fills behind the status bar up to the top edge; content stays below it.
-        .background(WoodDeck(tone: woodTone).ignoresSafeArea(edges: .top))
+        // Wood fills behind the status bar up to the top edge; its bottom corners
+        // curve inward so the band tucks down to meet the inset arranger.
+        .background(
+            WoodDeck(tone: woodTone)
+                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 22,
+                                                  bottomTrailingRadius: 22, topTrailingRadius: 0, style: .continuous))
+                .ignoresSafeArea(edges: .top)
+        )
     }
 
     /// Seam between the wood panel and the metal faceplate below.
