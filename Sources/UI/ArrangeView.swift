@@ -6,6 +6,7 @@ import SwiftUI
 struct ArrangeView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var seq: Sequencer
+    var dark = false                    // dark mode: black out the note-lane area only
     var onEditTracks: () -> Void = {}   // open full per-track controls
 
     private let headerWidth: CGFloat = 116
@@ -53,16 +54,17 @@ struct ArrangeView: View {
                             }
                         }
                         .frame(width: headerWidth)
+                        .background(Theme.rail)   // header column stays light even in dark mode
 
-                        // Zoom/scroll timeline column
+                        // Zoom/scroll timeline column — the "inside" that goes black in dark mode
                         ScrollView(.horizontal) {
                             VStack(spacing: 4) {
                                 RulerTimeline(seq: seq, totalBeats: totalBeats, selectMode: selectMode,
-                                              selectedTrackID: model.selectedTrackID)
+                                              selectedTrackID: model.selectedTrackID, dark: dark)
                                     .frame(width: contentW, height: rulerHeight)
                                 ForEach(model.tracks) { track in
                                     LaneTimelineView(track: track, seq: seq, totalBeats: totalBeats,
-                                                     loPitch: loPitch, hiPitch: hiPitch,
+                                                     loPitch: loPitch, hiPitch: hiPitch, dark: dark,
                                                      onSelect: { model.select(track) })
                                         .frame(width: contentW, height: laneHeight)
                                 }
@@ -80,7 +82,7 @@ struct ArrangeView: View {
                     }
                 }
             }
-            .background(Theme.rail)
+            .background(dark ? Color.black : Theme.rail)   // arranger interior black in dark mode
         }
     }
 
@@ -185,6 +187,7 @@ private struct RulerTimeline: View {
     let totalBeats: Int
     var selectMode = false
     var selectedTrackID: UUID?
+    var dark = false
 
     // Live drag translations (px) — preview the edge while dragging, commit on end.
     @State private var loopStartDrag: CGFloat?
@@ -230,11 +233,12 @@ private struct RulerTimeline: View {
                 }
                 ForEach(0..<max(1, seq.loopBars), id: \.self) { bar in
                     let x = CGFloat(bar) / CGFloat(max(1, seq.loopBars)) * w
-                    Text("\(bar + 1)").font(Theme.mono(9, .semibold)).foregroundStyle(Theme.etchedSoft)
+                    Text("\(bar + 1)").font(Theme.mono(9, .semibold))
+                        .foregroundStyle(dark ? Color.white.opacity(0.5) : Theme.etchedSoft)
                         .position(x: x + 8, y: h / 2).allowsHitTesting(false)
                 }
                 let px = CGFloat(seq.positionBeats / max(0.001, seq.totalBeats)) * w
-                Rectangle().fill(Theme.etched).frame(width: 1.5, height: h).position(x: px, y: h / 2)
+                Rectangle().fill(dark ? Color.white : Theme.etched).frame(width: 1.5, height: h).position(x: px, y: h / 2)
                     .allowsHitTesting(false)
             }
             .contentShape(Rectangle())
@@ -316,6 +320,7 @@ private struct LaneTimelineView: View {
     let totalBeats: Int
     let loPitch: Int
     let hiPitch: Int
+    var dark = false
     let onSelect: () -> Void
 
     var body: some View {
@@ -347,7 +352,8 @@ private struct LaneTimelineView: View {
                         .frame(width: nw, height: 3).position(x: x + nw / 2, y: max(2, min(h - 2, y)))
                 }
                 let px = CGFloat(min(loop, max(0, seq.positionBeats)) / loop) * w
-                Rectangle().fill(Theme.etched.opacity(0.8)).frame(width: 1.5, height: h).position(x: px, y: h / 2)
+                Rectangle().fill(dark ? Color.white.opacity(0.85) : Theme.etched.opacity(0.8))
+                    .frame(width: 1.5, height: h).position(x: px, y: h / 2)
             }
             .contentShape(Rectangle())
             // Tap a lane to move the playhead and select that track. (Time selection

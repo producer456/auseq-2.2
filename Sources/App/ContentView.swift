@@ -59,7 +59,7 @@ struct ContentView: View {
             if isPhone { phoneBody } else { padBody }
         }
         .tint(Theme.orange)
-        .preferredColorScheme(darkMode ? .dark : .light)
+        .preferredColorScheme(.light)   // chrome stays light; dark mode only blackens the arranger
         .sheet(isPresented: $showingConfig) {
             ConfigurationView(model: model)
         }
@@ -132,7 +132,7 @@ struct ContentView: View {
     /// The content area below the wood control panel — the arranger fills it now
     /// that the parameters live as knobs in the wood.
     private var contentColumn: some View {
-        ArrangeView(model: model, seq: model.sequencer, onEditTracks: { showingTracks = true })
+        ArrangeView(model: model, seq: model.sequencer, dark: darkMode, onEditTracks: { showingTracks = true })
     }
 
     /// Brushed-aluminium faceplate fill (no safe-area bleed — it's inset in the bezel).
