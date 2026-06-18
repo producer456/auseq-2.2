@@ -95,16 +95,17 @@ struct ContentView: View {
             faceplate.ignoresSafeArea()
             VStack(spacing: 0) {
                 woodPanel
+                // Arranger runs full-width to match the wood band above it; the wood
+                // curves down around its top corners so the top joins the sides.
                 contentColumn
-                    .recessedPanel(radius: 18)                               // display module sunk into the chassis
-                    // Wood curves down around the arranger's top corners.
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 0,
+                                                      bottomTrailingRadius: 0, topTrailingRadius: 18, style: .continuous))
                     .overlay(alignment: .topLeading) { WoodFillet(tone: woodTone).frame(width: 18, height: 18) }
                     .overlay(alignment: .topTrailing) { WoodFillet(tone: woodTone, mirrored: true).frame(width: 18, height: 18) }
-                    .padding(.horizontal, 12)
                     .padding(.bottom, keyboardVisible ? 6 : 12)
                 if keyboardVisible {
                     PianoKeyboardView(model: model, height: 190)
-                        .padding(.horizontal, 12).padding(.bottom, 12)
+                        .padding(.bottom, 12)
                 }
             }
         }
