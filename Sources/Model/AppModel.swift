@@ -83,6 +83,7 @@ final class AppModel: ObservableObject {
 
     func select(_ track: Track) {
         selectedTrackID = track.id
+        sequencer.selTrackID = track.id   // ONE-track edits target the selected track
         paramBank = 0
         setArmed(track)        // selected track auto-arms (single-arm)
         syncBrowseToSelection() // point the big wheel at this track's instrument

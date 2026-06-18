@@ -138,11 +138,14 @@ final class Sequencer: ObservableObject {
         return []
     }
 
-    // MARK: - Clipboard editing (all beats)
+    // MARK: - Clipboard editing — operates on the LOOP region (the single range)
+
+    /// The edit range is the loop region; the scope is ALL tracks or the selected one.
+    var hasEditRange: Bool { hasLoopRegion }
 
     func copySelection(allTrackIDs: [UUID]) {
-        guard hasSelection else { return }
-        let a = selStartBeat, b = selEndBeat
+        guard hasLoopRegion else { return }
+        let a = loopStartBeat, b = loopEndBeat
         clipboard.removeAll()
         for tid in targetIDs(allTrackIDs) {
             let notes = noteRects(for: tid).filter { $0.start >= a && $0.start < b }
@@ -154,31 +157,32 @@ final class Sequencer: ObservableObject {
     }
 
     func eraseSelection(allTrackIDs: [UUID]) {
-        guard hasSelection else { return }
+        guard hasLoopRegion else { return }
         pushUndo()
-        for tid in targetIDs(allTrackIDs) { removeNotes(tid, from: selStartBeat, to: selEndBeat) }
+        for tid in targetIDs(allTrackIDs) { removeNotes(tid, from: loopStartBeat, to: loopEndBeat) }
         refreshContent(); objectWillChange.send()
     }
 
     func cutSelection(allTrackIDs: [UUID]) {
-        guard hasSelection else { return }
+        guard hasLoopRegion else { return }
         pushUndo()
         copySelection(allTrackIDs: allTrackIDs)
         let ids = targetIDs(allTrackIDs)
-        let a = selStartBeat
+        let a = loopStartBeat
         if selectionAllTracks {
-            let removedBars = Int(((selEndBeat - selStartBeat) / Double(beatsPerBar)).rounded())
+            let removedBars = Int(((loopEndBeat - loopStartBeat) / Double(beatsPerBar)).rounded())
             if removedBars >= 1 {
                 let b = a + Double(removedBars * beatsPerBar)
                 for tid in ids { rippleRemove(tid, from: a, to: b) }
                 loopBars = max(1, loopBars - removedBars)
+                clearLoopRegion()
             } else {
-                for tid in ids { removeNotes(tid, from: a, to: selEndBeat) }
+                for tid in ids { removeNotes(tid, from: a, to: loopEndBeat) }
             }
         } else {
-            for tid in ids { rippleRemove(tid, from: a, to: selEndBeat) }
+            for tid in ids { rippleRemove(tid, from: a, to: loopEndBeat) }
         }
-        clearSelection(); refreshContent(); objectWillChange.send()
+        refreshContent(); objectWillChange.send()
     }
 
     private func rippleRemove(_ tid: UUID, from a: Double, to b: Double) {

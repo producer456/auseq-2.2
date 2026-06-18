@@ -17,7 +17,6 @@ struct ArrangeView: View {
 
     @State private var ppb: CGFloat = 0            // points per beat; 0 = fit to width
     @State private var pinchStartPPB: CGFloat?
-    @State private var selectMode = false          // marquee tool: drag selects/sets loop instead of scrolling
 
     private var totalBeats: Int { max(1, seq.loopBars * seq.beatsPerBar) }
 
@@ -59,7 +58,7 @@ struct ArrangeView: View {
                         // Zoom/scroll timeline column — the "inside" that goes black in dark mode
                         ScrollView(.horizontal) {
                             VStack(spacing: 4) {
-                                RulerTimeline(seq: seq, totalBeats: totalBeats, selectMode: selectMode,
+                                RulerTimeline(seq: seq, totalBeats: totalBeats,
                                               selectedTrackID: model.selectedTrackID, dark: dark)
                                     .frame(width: contentW, height: rulerHeight)
                                 ForEach(model.tracks) { track in
@@ -78,7 +77,6 @@ struct ArrangeView: View {
                                     .onEnded { _ in pinchStartPPB = nil }
                             )
                         }
-                        .scrollDisabled(selectMode)   // let drags select/set-loop instead of scrolling
                     }
                 }
             }
@@ -104,14 +102,7 @@ struct ArrangeView: View {
     private var editToolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
-                // Marquee tool — when on, drag the timeline to select / set the loop.
-                Button { selectMode.toggle() } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: "selection.pin.in.out").font(.system(size: 15, weight: .semibold))
-                        Text("Select").font(Theme.mono(8, .semibold))
-                    }
-                    .foregroundStyle(selectMode ? Theme.orange : (dark ? Color.white : Theme.etched))
-                }
+                // Edit scope: all tracks or just the selected one
                 Button { seq.selectionAllTracks.toggle() } label: {
                     Text(seq.selectionAllTracks ? "ALL" : "ONE")
                         .etchedLabel(9, weight: .bold)
@@ -119,17 +110,14 @@ struct ArrangeView: View {
                 }
                 Divider().frame(height: 26)
                 tool("Undo", "arrow.uturn.backward", enabled: seq.canUndo) { seq.undo() }
-                tool("Cut", "scissors", enabled: seq.hasSelection) { model.editCut() }
-                tool("Copy", "doc.on.doc", enabled: seq.hasSelection) { model.editCopy() }
+                // Cut/Copy/Erase act on the LOOP region (drag the ruler to set it)
+                tool("Cut", "scissors", enabled: seq.hasEditRange) { model.editCut() }
+                tool("Copy", "doc.on.doc", enabled: seq.hasEditRange) { model.editCopy() }
                 tool("Paste", "doc.on.clipboard", enabled: seq.hasClipboard) { model.editPaste() }
-                tool("Erase", "eraser", enabled: seq.hasSelection) { model.editErase() }
-                if seq.hasSelection {
-                    tool("Deselect", "xmark.circle", enabled: true) { seq.clearSelection() }
-                }
+                tool("Erase", "eraser", enabled: seq.hasEditRange) { model.editErase() }
                 Divider().frame(height: 26)
                 tool("Loop In", "arrow.down.to.line", enabled: true) { seq.setLoopIn() }
                 tool("Loop Out", "arrow.up.to.line", enabled: true) { seq.setLoopOut() }
-                tool("Loop Sel", "repeat", enabled: seq.hasSelection) { seq.loopSelection() }
                 if seq.hasLoopRegion {
                     tool("Clear Loop", "xmark", enabled: true) { seq.clearLoopRegion() }
                 }
@@ -194,51 +182,35 @@ private struct LaneHeaderView: View {
 private struct RulerTimeline: View {
     @ObservedObject var seq: Sequencer
     let totalBeats: Int
-    var selectMode = false
     var selectedTrackID: UUID?
     var dark = false
 
     // Live drag translations (px) — preview the edge while dragging, commit on end.
     @State private var loopStartDrag: CGFloat?
     @State private var loopEndDrag: CGFloat?
-    @State private var selStartDrag: CGFloat?
-    @State private var selEndDrag: CGFloat?
+    @State private var newLoopStart: Double?   // anchor while dragging a brand-new loop
 
-    private let selBlue = Color(red: 0.2, green: 0.55, blue: 0.95)
     private let grabW: CGFloat = 40   // wide press target, like NoteLab
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
-            let total = CGFloat(totalBeats)
             let g = seq.quantizeGrid.beats
 
             // Live (snapped, clamped) edge beats — end first, then start clamped under it.
             let lEnd   = liveBeat(seq.loopEndBeat,  loopEndDrag,  w, lo: g, hi: Double(totalBeats))
             let lStart = liveBeat(seq.loopStartBeat, loopStartDrag, w, lo: 0, hi: max(0, lEnd - g))
-            let sEnd   = liveBeat(seq.selEndBeat,   selEndDrag,   w, lo: g, hi: Double(totalBeats))
-            let sStart = liveBeat(seq.selStartBeat, selStartDrag, w, lo: 0, hi: max(0, sEnd - g))
 
             ZStack(alignment: .topLeading) {
-                // Loop region band + draggable brace edges (orange)
+                // Loop = edit range: band + draggable brace edges (orange)
                 if seq.hasLoopRegion {
-                    band(lStart, lEnd, w: w, h: h, color: Theme.orange, fill: 0.30)
+                    band(lStart, lEnd, w: w, h: h, color: Theme.orange, fill: 0.32)
                     grabBar(beat: lStart, w: w, h: h, color: Theme.orange,
                             onDrag: { loopStartDrag = $0 },
                             onEnd:  { seq.setLoopRegion(startBeat: lStart, endBeat: lEnd); loopStartDrag = nil })
                     grabBar(beat: lEnd, w: w, h: h, color: Theme.orange,
                             onDrag: { loopEndDrag = $0 },
                             onEnd:  { seq.setLoopRegion(startBeat: lStart, endBeat: lEnd); loopEndDrag = nil })
-                }
-                // Selection band + draggable edges (blue)
-                if seq.hasSelection {
-                    band(sStart, sEnd, w: w, h: h, color: selBlue, fill: 0.35)
-                    grabBar(beat: sStart, w: w, h: h, color: selBlue,
-                            onDrag: { selStartDrag = $0 },
-                            onEnd:  { seq.setSelection(startBeat: sStart, endBeat: sEnd, trackID: selectedTrackID); selStartDrag = nil })
-                    grabBar(beat: sEnd, w: w, h: h, color: selBlue,
-                            onDrag: { selEndDrag = $0 },
-                            onEnd:  { seq.setSelection(startBeat: sStart, endBeat: sEnd, trackID: selectedTrackID); selEndDrag = nil })
                 }
                 ForEach(0..<max(1, seq.loopBars), id: \.self) { bar in
                     let x = CGFloat(bar) / CGFloat(max(1, seq.loopBars)) * w
@@ -251,12 +223,17 @@ private struct RulerTimeline: View {
                     .allowsHitTesting(false)
             }
             .contentShape(Rectangle())
-            // Select mode: drag the BAR to make a new time selection (edges resize it).
-            .conditionalDrag(selectMode) { start, cur in
-                seq.setSelection(startBeat: Double(start / w) * Double(totalBeats),
-                                 endBeat: Double(cur / w) * Double(totalBeats),
-                                 trackID: selectedTrackID)
-            }
+            // Drag the bar to make/extend the loop region (the edit range). High
+            // priority so it wins over the horizontal scroll; tap still seeks.
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { v in
+                        if newLoopStart == nil { newLoopStart = Double(v.startLocation.x / w) * Double(totalBeats) }
+                        seq.setLoopRegion(startBeat: newLoopStart ?? 0,
+                                          endBeat: Double(v.location.x / w) * Double(totalBeats))
+                    }
+                    .onEnded { _ in newLoopStart = nil }
+            )
             .gesture(   // tap the bar to move the playhead
                 SpatialTapGesture().onEnded { v in
                     seq.seek(toBeat: Double(v.location.x / w) * Double(totalBeats))
@@ -339,7 +316,8 @@ private struct LaneTimelineView: View {
             let total = CGFloat(totalBeats)
             let rects = seq.noteRects(for: track.id)
             let span = CGFloat(hiPitch - loPitch)
-            let mine = seq.selectionAllTracks || seq.selTrackID == track.id
+            // The loop region is the edit range — show it across the targeted lanes.
+            let inScope = seq.selectionAllTracks || seq.selTrackID == track.id
 
             ZStack(alignment: .topLeading) {
                 ForEach(0..<totalBeats, id: \.self) { b in
@@ -347,10 +325,10 @@ private struct LaneTimelineView: View {
                     Rectangle().fill(Theme.gold.opacity(b % seq.beatsPerBar == 0 ? 0.3 : 0.12))
                         .frame(width: b % seq.beatsPerBar == 0 ? 1 : 0.5, height: h).position(x: x, y: h / 2)
                 }
-                if mine && seq.hasSelection {
-                    let x1 = CGFloat(seq.selStartBeat) / total * w
-                    let x2 = CGFloat(seq.selEndBeat) / total * w
-                    Rectangle().fill(Color(red: 0.2, green: 0.55, blue: 0.95).opacity(0.28))
+                if seq.hasLoopRegion {
+                    let x1 = CGFloat(seq.loopStartBeat) / total * w
+                    let x2 = CGFloat(seq.loopEndBeat) / total * w
+                    Rectangle().fill(Theme.orange.opacity(inScope ? 0.18 : 0.07))
                         .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
                 }
                 ForEach(Array(rects.enumerated()), id: \.offset) { _, r in
