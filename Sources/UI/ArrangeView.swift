@@ -186,6 +186,10 @@ private struct RulerTimeline: View {
     var selectMode = false
     var selectedTrackID: UUID?
 
+    @State private var dragStartL: Double?   // captured edge beat at drag begin
+    @State private var dragStartR: Double?
+    private let selBlue = Color(red: 0.2, green: 0.55, blue: 0.95)
+
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
@@ -198,16 +202,15 @@ private struct RulerTimeline: View {
                     Rectangle().fill(Theme.orange.opacity(0.3))
                         .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
                 }
-                // Selection band (blue) — shown here on the bar so your finger isn't over the notes
+                // Selection band (blue) with draggable edge handles — on the bar so
+                // your finger isn't over the notes.
                 if seq.hasSelection {
                     let x1 = CGFloat(seq.selStartBeat) / total * w
                     let x2 = CGFloat(seq.selEndBeat) / total * w
-                    Rectangle().fill(Color(red: 0.2, green: 0.55, blue: 0.95).opacity(0.40))
+                    Rectangle().fill(selBlue.opacity(0.35))
                         .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
-                        .overlay(Rectangle().fill(Color(red: 0.2, green: 0.55, blue: 0.95))
-                            .frame(width: 1.5, height: h).position(x: x1, y: h / 2))
-                        .overlay(Rectangle().fill(Color(red: 0.2, green: 0.55, blue: 0.95))
-                            .frame(width: 1.5, height: h).position(x: x2, y: h / 2))
+                    edgeHandle(x: x1, h: h, w: w, isLeft: true)
+                    edgeHandle(x: x2, h: h, w: w, isLeft: false)
                 }
                 ForEach(0..<max(1, seq.loopBars), id: \.self) { bar in
                     let x = CGFloat(bar) / CGFloat(max(1, seq.loopBars)) * w
@@ -231,6 +234,35 @@ private struct RulerTimeline: View {
                 }
             )
         }
+    }
+
+    /// A draggable selection edge: a line + grip with a wide touch zone. Works even
+    /// when not in Select mode (high priority over the scroll view).
+    private func edgeHandle(x: CGFloat, h: CGFloat, w: CGFloat, isLeft: Bool) -> some View {
+        let g = seq.quantizeGrid.beats
+        return ZStack {
+            Rectangle().fill(selBlue).frame(width: 2, height: h)
+            Capsule().fill(selBlue).frame(width: 7, height: 13).offset(y: -h / 2 + 7)   // grip knob
+        }
+        .frame(width: 26, height: h)                 // wide touch target
+        .contentShape(Rectangle())
+        .position(x: x, y: h / 2)
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { v in
+                    let delta = Double(v.translation.width / w) * Double(totalBeats)
+                    if isLeft {
+                        if dragStartL == nil { dragStartL = seq.selStartBeat }
+                        let nb = min((dragStartL ?? 0) + delta, seq.selEndBeat - g)   // keep ≥1 grid wide
+                        seq.setSelection(startBeat: nb, endBeat: seq.selEndBeat, trackID: selectedTrackID)
+                    } else {
+                        if dragStartR == nil { dragStartR = seq.selEndBeat }
+                        let nb = max((dragStartR ?? 0) + delta, seq.selStartBeat + g)
+                        seq.setSelection(startBeat: seq.selStartBeat, endBeat: nb, trackID: selectedTrackID)
+                    }
+                }
+                .onEnded { _ in dragStartL = nil; dragStartR = nil }
+        )
     }
 }
 
