@@ -38,6 +38,7 @@ struct ArrangeView: View {
                             rulerHeaderCell.frame(height: rulerHeight)
                             ForEach(model.tracks) { track in
                                 LaneHeaderView(track: track, isSelected: track.id == model.selectedTrackID,
+                                               dark: dark,
                                                onSelect: { model.select(track) },
                                                onEdit: onEditTracks)
                                     .frame(width: headerWidth, height: laneHeight)
@@ -49,12 +50,11 @@ struct ArrangeView: View {
                                 }
                                 .foregroundStyle(Theme.orange)
                                 .frame(width: headerWidth, height: 30)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.25)))
+                                .background(RoundedRectangle(cornerRadius: 6).fill(dark ? Color.white.opacity(0.06) : Color.white.opacity(0.25)))
                                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.gold.opacity(0.4)))
                             }
                         }
                         .frame(width: headerWidth)
-                        .background(Theme.rail)   // header column stays light even in dark mode
 
                         // Zoom/scroll timeline column — the "inside" that goes black in dark mode
                         ScrollView(.horizontal) {
@@ -90,7 +90,7 @@ struct ArrangeView: View {
         HStack(spacing: 6) {
             Text(seq.hasLoopRegion ? "LOOP" : "BARS")
                 .etchedLabel(9, soft: !seq.hasLoopRegion, weight: .bold)
-                .foregroundStyle(seq.hasLoopRegion ? Theme.orange : Theme.etchedSoft)
+                .foregroundStyle(seq.hasLoopRegion ? Theme.orange : (dark ? Color.white.opacity(0.5) : Theme.etchedSoft))
             if seq.hasLoopRegion {
                 Button { seq.clearLoopRegion() } label: {
                     Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(Theme.etchedSoft)
@@ -156,15 +156,23 @@ struct ArrangeView: View {
 private struct LaneHeaderView: View {
     @ObservedObject var track: Track
     let isSelected: Bool
+    var dark = false
     let onSelect: () -> Void
     var onEdit: () -> Void = {}
+
+    private var fill: Color {
+        if isSelected { return Theme.orange.opacity(dark ? 0.22 : 0.12) }
+        return dark ? Color.white.opacity(0.05) : Color.white.opacity(0.25)   // blends with black in dark
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2).fill(track.color).frame(width: 4, height: 28)
             VStack(alignment: .leading, spacing: 1) {
-                Text(track.name).font(.caption.weight(.semibold)).foregroundStyle(Theme.etched).lineLimit(1)
-                Text(track.instrumentName).etchedLabel(7, soft: true, weight: .medium).lineLimit(1)
+                Text(track.name).font(.caption.weight(.semibold))
+                    .foregroundStyle(dark ? Color.white.opacity(0.9) : Theme.etched).lineLimit(1)
+                Text(track.instrumentName).font(Theme.mono(7, .medium)).tracking(0.5)
+                    .foregroundStyle(dark ? Color.white.opacity(0.5) : Theme.etchedSoft).lineLimit(1)
             }
             Spacer(minLength: 0)
             if track.armed {
@@ -173,7 +181,7 @@ private struct LaneHeaderView: View {
         }
         .padding(.horizontal, 8)
         .frame(maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 6).fill(isSelected ? Theme.orange.opacity(0.12) : Color.white.opacity(0.25)))
+        .background(RoundedRectangle(cornerRadius: 6).fill(fill))
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(isSelected ? Theme.orange : Theme.gold.opacity(0.3), lineWidth: isSelected ? 1.5 : 1))
         .contentShape(Rectangle())
         .onTapGesture { isSelected ? onEdit() : onSelect() }   // tap selects; tap selected again = controls
