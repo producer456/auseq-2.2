@@ -283,8 +283,7 @@ struct ContentView: View {
         // curve inward so the band tucks down to meet the inset arranger.
         .background(
             WoodDeck(tone: woodTone)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 22,
-                                                  bottomTrailingRadius: 22, topTrailingRadius: 0, style: .continuous))
+                .clipShape(WoodBandShape(inset: 14, shoulder: 22))
                 .ignoresSafeArea(edges: .top)
         )
     }

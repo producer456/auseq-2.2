@@ -217,6 +217,26 @@ struct CornerFilletTL: Shape {
     }
 }
 
+/// Wood band whose bottom narrows with CONCAVE shoulders to meet the inset
+/// arranger — the wood drapes down and in around it (not an upside-down arch).
+struct WoodBandShape: Shape {
+    var inset: CGFloat = 14
+    var shoulder: CGFloat = 22
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        let s = min(shoulder, h)
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: 0))
+        p.addLine(to: CGPoint(x: w, y: 0))
+        p.addLine(to: CGPoint(x: w, y: h - s))
+        p.addQuadCurve(to: CGPoint(x: w - inset, y: h), control: CGPoint(x: w - inset, y: h - s))  // right shoulder
+        p.addLine(to: CGPoint(x: inset, y: h))                                                      // straight across the arranger
+        p.addQuadCurve(to: CGPoint(x: 0, y: h - s), control: CGPoint(x: inset, y: h - s))           // left shoulder
+        p.closeSubpath()
+        return p
+    }
+}
+
 /// Wood wedge for an arranger top corner (mirror for the right side).
 struct WoodFillet: View {
     var tone: WoodTone
