@@ -80,7 +80,7 @@ struct ArrangeView: View {
                     }
                 }
             }
-            .background(Theme.rail.opacity(0.5))
+            .background(Theme.rail)
         }
     }
 

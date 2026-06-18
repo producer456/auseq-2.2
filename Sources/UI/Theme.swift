@@ -1,20 +1,29 @@
 import SwiftUI
+import UIKit
 
-/// AstroLab visual language (v2) — modeled on Arturia's AstroLab stage keyboard:
-/// matte snow-white surfaces, light blonde-wood cheeks, blue LED accents, a
-/// circular "navigation wheel" color screen, and macro knobs with LED rings.
-/// Clean, bright, retro-futuristic. Token names are kept stable across themes.
+/// AstroLab visual language (v2). Surfaces/ink are **adaptive** — they flip with
+/// the color scheme so the app has a real light + dark mode (toggled in the UI).
+/// Accents (teal/mint/record) and wood stay constant. Token names kept stable.
 enum Theme {
-    // Cool matte white surfaces
-    static let panelLight = Color(red: 0.968, green: 0.972, blue: 0.976)
-    static let panelMid   = Color(red: 0.944, green: 0.949, blue: 0.955)
-    static let panelDark  = Color(red: 0.900, green: 0.908, blue: 0.918)
-    static let card       = Color(red: 0.976, green: 0.980, blue: 0.985)
-    static let rail       = Color(red: 0.934, green: 0.940, blue: 0.948)
+    /// Adaptive colour: `light` in light mode, `dark` in dark mode.
+    static func dyn(_ l: (Double, Double, Double), _ d: (Double, Double, Double)) -> Color {
+        Color(UIColor { tc in
+            tc.userInterfaceStyle == .dark
+                ? UIColor(red: d.0, green: d.1, blue: d.2, alpha: 1)
+                : UIColor(red: l.0, green: l.1, blue: l.2, alpha: 1)
+        })
+    }
 
-    // Ink — clean dark slate
-    static let etched     = Color(red: 0.150, green: 0.170, blue: 0.205)
-    static let etchedSoft = Color(red: 0.470, green: 0.500, blue: 0.545)
+    // Cool matte surfaces (light) ↔ graphite (dark)
+    static let panelLight = dyn((0.968, 0.972, 0.976), (0.175, 0.185, 0.205))
+    static let panelMid   = dyn((0.944, 0.949, 0.955), (0.140, 0.150, 0.168))
+    static let panelDark  = dyn((0.900, 0.908, 0.918), (0.105, 0.115, 0.132))
+    static let card       = dyn((0.976, 0.980, 0.985), (0.185, 0.195, 0.215))
+    static let rail       = dyn((0.934, 0.940, 0.948), (0.130, 0.140, 0.158))
+
+    // Ink — dark slate (light mode) ↔ soft white (dark mode)
+    static let etched     = dyn((0.150, 0.170, 0.205), (0.860, 0.880, 0.910))
+    static let etchedSoft = dyn((0.470, 0.500, 0.545), (0.560, 0.595, 0.650))
 
     // Accents — one teal/mint family (was blue; it fought the mint + oak)
     static let orange = Color(red: 0.130, green: 0.600, blue: 0.610)   // teal — selection/active
@@ -22,12 +31,12 @@ enum Theme {
     static let led1   = Color(red: 0.960, green: 0.780, blue: 0.200)   // yellow — "part 1"
     static let led2   = Color(red: 0.240, green: 0.740, blue: 0.440)   // green — "part 2"
     static let record = Color(red: 0.880, green: 0.260, blue: 0.230)   // red dot
-    static let gold   = Color(red: 0.860, green: 0.866, blue: 0.872)   // soft cool hairline
+    static let gold   = dyn((0.860, 0.866, 0.872), (0.300, 0.320, 0.360))   // soft hairline
     static let amber  = orange
 
     // Keybed (white keys, cool light bed)
     static let ivory    = Color(red: 0.985, green: 0.988, blue: 0.992)
-    static let keybed   = Color(red: 0.850, green: 0.862, blue: 0.878)
+    static let keybed   = dyn((0.850, 0.862, 0.878), (0.200, 0.215, 0.245))
     static let blackKey = Color(red: 0.190, green: 0.205, blue: 0.235)
 
     // Light natural-oak wood cheeks
@@ -38,9 +47,12 @@ enum Theme {
     /// iPad's physical bezel — the faceplate sits recessed inside it.
     static let bezel = Color(red: 0.045, green: 0.050, blue: 0.060)
 
-    static let surface = LinearGradient(
-        colors: [Color(red: 0.958, green: 0.962, blue: 0.968), Color(red: 0.928, green: 0.934, blue: 0.942)],
-        startPoint: .top, endPoint: .bottom)
+    // Brushed faceplate — light silver ↔ dark graphite.
+    static var surface: LinearGradient {
+        LinearGradient(colors: [dyn((0.958, 0.962, 0.968), (0.165, 0.175, 0.195)),
+                                dyn((0.928, 0.934, 0.942), (0.120, 0.128, 0.145))],
+                       startPoint: .top, endPoint: .bottom)
+    }
 
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .semibold) -> Font {
         .system(size: size, weight: weight, design: .rounded)

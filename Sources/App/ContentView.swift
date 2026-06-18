@@ -48,6 +48,7 @@ struct ContentView: View {
     @State private var keyboardVisible = false   // fallback only — opened on demand when no controller
     @State private var showingPluginUI = false
     @AppStorage("woodTone") private var woodToneRaw = WoodTone.oak.rawValue
+    @AppStorage("darkMode") private var darkMode = false
     @Environment(\.horizontalSizeClass) private var hSize
 
     private var isPhone: Bool { hSize == .compact }
@@ -58,7 +59,7 @@ struct ContentView: View {
             if isPhone { phoneBody } else { padBody }
         }
         .tint(Theme.orange)
-        .preferredColorScheme(.light)
+        .preferredColorScheme(darkMode ? .dark : .light)
         .sheet(isPresented: $showingConfig) {
             ConfigurationView(model: model)
         }
@@ -230,6 +231,10 @@ struct ContentView: View {
                     }
                 }
                 Spacer()
+                // Light / dark mode
+                Button { darkMode.toggle() } label: {
+                    InlaidMetalButton(system: darkMode ? "sun.max.fill" : "moon.fill", lit: true, tint: Theme.orange, size: well, tone: woodTone)
+                }
                 // Wood finish toggle — LED glows the tone you'll switch TO
                 Button { woodToneRaw = woodTone.next.rawValue } label: {
                     InlaidMetalButton(system: "circle.fill", lit: true, tint: woodTone.next.light, size: well, tone: woodTone)
