@@ -473,17 +473,21 @@ struct SegmentedLEDRing: View {
                     : (t <= p + 1e-6)
                 let a = (startDeg + sweepDeg * t) * .pi / 180
                 let pt = CGPoint(x: c.x + r * cos(a), y: c.y + r * sin(a))
-                if lit {   // bloom
-                    let b = dotRadius * 2.4
-                    ctx.fill(Path(ellipseIn: CGRect(x: pt.x - b, y: pt.y - b, width: b * 2, height: b * 2)),
-                             with: .color(color.opacity(0.30)))
+                if lit {   // two-layer bloom for a brighter, hotter glow
+                    let b1 = dotRadius * 3.6
+                    ctx.fill(Path(ellipseIn: CGRect(x: pt.x - b1, y: pt.y - b1, width: b1 * 2, height: b1 * 2)),
+                             with: .color(color.opacity(0.26)))
+                    let b2 = dotRadius * 2.1
+                    ctx.fill(Path(ellipseIn: CGRect(x: pt.x - b2, y: pt.y - b2, width: b2 * 2, height: b2 * 2)),
+                             with: .color(color.opacity(0.48)))
                 }
-                ctx.fill(Path(ellipseIn: CGRect(x: pt.x - dotRadius, y: pt.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)),
-                         with: .color(lit ? color : color.opacity(0.12)))
-                if lit {   // bright core
-                    let h = dotRadius * 0.5
+                let dr = lit ? dotRadius * 1.12 : dotRadius
+                ctx.fill(Path(ellipseIn: CGRect(x: pt.x - dr, y: pt.y - dr, width: dr * 2, height: dr * 2)),
+                         with: .color(lit ? color : color.opacity(0.14)))
+                if lit {   // hot white core
+                    let h = dotRadius * 0.62
                     ctx.fill(Path(ellipseIn: CGRect(x: pt.x - h, y: pt.y - h, width: h * 2, height: h * 2)),
-                             with: .color(.white.opacity(0.55)))
+                             with: .color(.white.opacity(0.82)))
                 }
             }
         }
@@ -529,11 +533,12 @@ struct LEDRingKnob: View {
                 Capsule().fill(Color.black.opacity(0.22)).frame(width: 1.5, height: 5)
                     .offset(y: -size / 2)
             }
-            // Discrete LED ring
+            // Discrete LED ring — with an overall glow for extra brightness
             SegmentedLEDRing(progress: shown, color: ring, diameter: size,
-                             dotRadius: max(1.3, size * 0.028), segments: 19,
+                             dotRadius: max(1.4, size * 0.030), segments: 19,
                              sweepDeg: 270, startDeg: 135, bipolar: bipolar)
                 .frame(width: size + 14, height: size + 14)
+                .shadow(color: ring.opacity(0.55), radius: size * 0.06)
             // Brushed/spun aluminium cap (domed) — soft ambient shadow seats it in the plate
             Circle().fill(Color.black.opacity(0.18)).frame(width: cap + 2, height: cap + 2).blur(radius: 2).offset(y: 1.5)
             Circle()
