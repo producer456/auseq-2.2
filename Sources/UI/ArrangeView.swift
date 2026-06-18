@@ -10,7 +10,7 @@ struct ArrangeView: View {
 
     private let headerWidth: CGFloat = 116
     private let laneHeight: CGFloat = 46
-    private let rulerHeight: CGFloat = 22
+    private let rulerHeight: CGFloat = 28
     private let loPitch = 24, hiPitch = 96
     private let minPPB: CGFloat = 5, maxPPB: CGFloat = 160
 
@@ -57,11 +57,12 @@ struct ArrangeView: View {
                         // Zoom/scroll timeline column
                         ScrollView(.horizontal) {
                             VStack(spacing: 4) {
-                                RulerTimeline(seq: seq, totalBeats: totalBeats, selectMode: selectMode)
+                                RulerTimeline(seq: seq, totalBeats: totalBeats, selectMode: selectMode,
+                                              selectedTrackID: model.selectedTrackID)
                                     .frame(width: contentW, height: rulerHeight)
                                 ForEach(model.tracks) { track in
                                     LaneTimelineView(track: track, seq: seq, totalBeats: totalBeats,
-                                                     loPitch: loPitch, hiPitch: hiPitch, selectMode: selectMode,
+                                                     loPitch: loPitch, hiPitch: hiPitch,
                                                      onSelect: { model.select(track) })
                                         .frame(width: contentW, height: laneHeight)
                                 }
@@ -183,17 +184,30 @@ private struct RulerTimeline: View {
     @ObservedObject var seq: Sequencer
     let totalBeats: Int
     var selectMode = false
+    var selectedTrackID: UUID?
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             let total = CGFloat(totalBeats)
             ZStack(alignment: .topLeading) {
+                // Loop region band (orange)
                 if seq.hasLoopRegion {
                     let x1 = CGFloat(seq.loopStartBeat) / total * w
                     let x2 = CGFloat(seq.loopEndBeat) / total * w
                     Rectangle().fill(Theme.orange.opacity(0.3))
                         .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
+                }
+                // Selection band (blue) — shown here on the bar so your finger isn't over the notes
+                if seq.hasSelection {
+                    let x1 = CGFloat(seq.selStartBeat) / total * w
+                    let x2 = CGFloat(seq.selEndBeat) / total * w
+                    Rectangle().fill(Color(red: 0.2, green: 0.55, blue: 0.95).opacity(0.40))
+                        .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
+                        .overlay(Rectangle().fill(Color(red: 0.2, green: 0.55, blue: 0.95))
+                            .frame(width: 1.5, height: h).position(x: x1, y: h / 2))
+                        .overlay(Rectangle().fill(Color(red: 0.2, green: 0.55, blue: 0.95))
+                            .frame(width: 1.5, height: h).position(x: x2, y: h / 2))
                 }
                 ForEach(0..<max(1, seq.loopBars), id: \.self) { bar in
                     let x = CGFloat(bar) / CGFloat(max(1, seq.loopBars)) * w
@@ -204,25 +218,17 @@ private struct RulerTimeline: View {
                 Rectangle().fill(Theme.etched).frame(width: 1.5, height: h).position(x: px, y: h / 2)
             }
             .contentShape(Rectangle())
-            // Select mode: plain drag sets the loop region (scrolling is disabled).
+            // Select mode: drag the BAR to make a time selection (across the ALL/ONE scope).
             .conditionalDrag(selectMode) { start, cur in
-                seq.setLoopRegion(startBeat: Double(start / w) * Double(totalBeats),
-                                  endBeat: Double(cur / w) * Double(totalBeats))
+                seq.setSelection(startBeat: Double(start / w) * Double(totalBeats),
+                                 endBeat: Double(cur / w) * Double(totalBeats),
+                                 trackID: selectedTrackID)
             }
+            // Tap the bar to move the playhead.
             .gesture(
-                LongPressGesture(minimumDuration: 0.25).sequenced(before: DragGesture(minimumDistance: 0))
-                    .onChanged { val in
-                        if case .second(true, let drag?) = val {
-                            let s = Double(drag.startLocation.x / w) * Double(totalBeats)
-                            let e = Double(drag.location.x / w) * Double(totalBeats)
-                            seq.setLoopRegion(startBeat: s, endBeat: e)
-                        }
-                    }
-                    .exclusively(before:
-                        SpatialTapGesture().onEnded { v in
-                            seq.seek(toBeat: Double(v.location.x / w) * Double(totalBeats))
-                        }
-                    )
+                SpatialTapGesture().onEnded { v in
+                    seq.seek(toBeat: Double(v.location.x / w) * Double(totalBeats))
+                }
             )
         }
     }
@@ -252,7 +258,6 @@ private struct LaneTimelineView: View {
     let totalBeats: Int
     let loPitch: Int
     let hiPitch: Int
-    var selectMode = false
     let onSelect: () -> Void
 
     var body: some View {
@@ -287,26 +292,13 @@ private struct LaneTimelineView: View {
                 Rectangle().fill(Theme.etched.opacity(0.8)).frame(width: 1.5, height: h).position(x: px, y: h / 2)
             }
             .contentShape(Rectangle())
-            // Select mode: plain drag makes a selection (scrolling is disabled).
-            .conditionalDrag(selectMode) { start, cur in
-                seq.setSelection(startBeat: Double(start / w) * Double(totalBeats),
-                                 endBeat: Double(cur / w) * Double(totalBeats), trackID: track.id)
-            }
+            // Tap a lane to move the playhead and select that track. (Time selection
+            // is made on the ruler bar above, so your finger doesn't cover the notes.)
             .gesture(
-                LongPressGesture(minimumDuration: 0.25).sequenced(before: DragGesture(minimumDistance: 0))
-                    .onChanged { val in
-                        if case .second(true, let drag?) = val {
-                            let s = Double(drag.startLocation.x / w) * Double(totalBeats)
-                            let e = Double(drag.location.x / w) * Double(totalBeats)
-                            seq.setSelection(startBeat: s, endBeat: e, trackID: track.id)
-                        }
-                    }
-                    .exclusively(before:
-                        SpatialTapGesture().onEnded { v in
-                            seq.seek(toBeat: Double(v.location.x / w) * Double(totalBeats))
-                            onSelect()
-                        }
-                    )
+                SpatialTapGesture().onEnded { v in
+                    seq.seek(toBeat: Double(v.location.x / w) * Double(totalBeats))
+                    onSelect()
+                }
             )
         }
     }
