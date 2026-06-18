@@ -8,6 +8,13 @@ This is **v2.2** at `/Users/admin/auseq-2.2`, repo `producer456/auseq-2.2`, bund
 
 v2.2 starts as a snapshot of everything v2.1 shipped (the full KeyLab hardware redesign: wood control panel + metal-LED inlaid buttons, big-knob screen with LED ring + preset flash, scaled knobs, recessed arranger, edge-to-edge, on-screen sound browse, lane-based track selection, linked param-bank paging, undo/tap-tempo/bar-seek, all 10 KeyLab left buttons + jog turn/press bound, 4-agent bug-review fixes). Deploy: `scripts/deploy.sh` (Paddy) / `scripts/deploy-direct.sh` (OTA, bundle `com.producer456.auseq22`).
 
+**Shipped in v2.2 (all device-verified on Paddy 2026-06-17):**
+- **Loop = edit range** (Logic-for-iPad style): dragging the ruler makes/extends the loop; Cut/Copy/Erase act on it directly; loop band shows across the targeted lanes. Removed the separate Select-mode + blue selection band (one range, no mode).
+- **Dark arranger** + wood-wrapped recessed "screen" corners; brighter param-knob LED rings.
+- **KeyLab LCD** — mirrors the big-knob screen (sound browser / preset flash / live encoder param name+value) via Arturia's display SysEx. (The old "LCD = dead end" was the wrong — Mackie — command; see Backlog.)
+- **KeyLab Select-button LEDs** — selected track lit white via Arturia's mono LED SysEx (MCU NoteOn doesn't drive them in this mode). Per-track RGB color can't latch on these buttons in DAW mode; the **16 pads CAN** (built as `updatePadLEDs`, parked/cleared for a future feature).
+- **MIDI input reliability** — re-wakes the KeyLab's dormant DAW port on CoreMIDI setup change (no longer needs Logic opened first).
+
 ---
 
 ## ▶ v2.1 (AstroLab fork) — FROZEN parent (history below is from v2.1)
