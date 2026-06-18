@@ -186,49 +186,65 @@ private struct RulerTimeline: View {
     var selectMode = false
     var selectedTrackID: UUID?
 
-    @State private var dragStartL: Double?   // captured edge beat at drag begin
-    @State private var dragStartR: Double?
+    // Live drag translations (px) — preview the edge while dragging, commit on end.
+    @State private var loopStartDrag: CGFloat?
+    @State private var loopEndDrag: CGFloat?
+    @State private var selStartDrag: CGFloat?
+    @State private var selEndDrag: CGFloat?
+
     private let selBlue = Color(red: 0.2, green: 0.55, blue: 0.95)
+    private let grabW: CGFloat = 40   // wide press target, like NoteLab
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             let total = CGFloat(totalBeats)
+            let g = seq.quantizeGrid.beats
+
+            // Live (snapped, clamped) edge beats — end first, then start clamped under it.
+            let lEnd   = liveBeat(seq.loopEndBeat,  loopEndDrag,  w, lo: g, hi: Double(totalBeats))
+            let lStart = liveBeat(seq.loopStartBeat, loopStartDrag, w, lo: 0, hi: max(0, lEnd - g))
+            let sEnd   = liveBeat(seq.selEndBeat,   selEndDrag,   w, lo: g, hi: Double(totalBeats))
+            let sStart = liveBeat(seq.selStartBeat, selStartDrag, w, lo: 0, hi: max(0, sEnd - g))
+
             ZStack(alignment: .topLeading) {
-                // Loop region band (orange)
+                // Loop region band + draggable brace edges (orange)
                 if seq.hasLoopRegion {
-                    let x1 = CGFloat(seq.loopStartBeat) / total * w
-                    let x2 = CGFloat(seq.loopEndBeat) / total * w
-                    Rectangle().fill(Theme.orange.opacity(0.3))
-                        .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
+                    band(lStart, lEnd, w: w, h: h, color: Theme.orange, fill: 0.30)
+                    grabBar(beat: lStart, w: w, h: h, color: Theme.orange,
+                            onDrag: { loopStartDrag = $0 },
+                            onEnd:  { seq.setLoopRegion(startBeat: lStart, endBeat: lEnd); loopStartDrag = nil })
+                    grabBar(beat: lEnd, w: w, h: h, color: Theme.orange,
+                            onDrag: { loopEndDrag = $0 },
+                            onEnd:  { seq.setLoopRegion(startBeat: lStart, endBeat: lEnd); loopEndDrag = nil })
                 }
-                // Selection band (blue) with draggable edge handles — on the bar so
-                // your finger isn't over the notes.
+                // Selection band + draggable edges (blue)
                 if seq.hasSelection {
-                    let x1 = CGFloat(seq.selStartBeat) / total * w
-                    let x2 = CGFloat(seq.selEndBeat) / total * w
-                    Rectangle().fill(selBlue.opacity(0.35))
-                        .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
-                    edgeHandle(x: x1, h: h, w: w, isLeft: true)
-                    edgeHandle(x: x2, h: h, w: w, isLeft: false)
+                    band(sStart, sEnd, w: w, h: h, color: selBlue, fill: 0.35)
+                    grabBar(beat: sStart, w: w, h: h, color: selBlue,
+                            onDrag: { selStartDrag = $0 },
+                            onEnd:  { seq.setSelection(startBeat: sStart, endBeat: sEnd, trackID: selectedTrackID); selStartDrag = nil })
+                    grabBar(beat: sEnd, w: w, h: h, color: selBlue,
+                            onDrag: { selEndDrag = $0 },
+                            onEnd:  { seq.setSelection(startBeat: sStart, endBeat: sEnd, trackID: selectedTrackID); selEndDrag = nil })
                 }
                 ForEach(0..<max(1, seq.loopBars), id: \.self) { bar in
                     let x = CGFloat(bar) / CGFloat(max(1, seq.loopBars)) * w
                     Text("\(bar + 1)").font(Theme.mono(9, .semibold)).foregroundStyle(Theme.etchedSoft)
-                        .position(x: x + 8, y: h / 2)
+                        .position(x: x + 8, y: h / 2).allowsHitTesting(false)
                 }
                 let px = CGFloat(seq.positionBeats / max(0.001, seq.totalBeats)) * w
                 Rectangle().fill(Theme.etched).frame(width: 1.5, height: h).position(x: px, y: h / 2)
+                    .allowsHitTesting(false)
             }
             .contentShape(Rectangle())
-            // Select mode: drag the BAR to make a time selection (across the ALL/ONE scope).
+            // Select mode: drag the BAR to make a new time selection (edges resize it).
             .conditionalDrag(selectMode) { start, cur in
                 seq.setSelection(startBeat: Double(start / w) * Double(totalBeats),
                                  endBeat: Double(cur / w) * Double(totalBeats),
                                  trackID: selectedTrackID)
             }
-            // Tap the bar to move the playhead.
-            .gesture(
+            .gesture(   // tap the bar to move the playhead
                 SpatialTapGesture().onEnded { v in
                     seq.seek(toBeat: Double(v.location.x / w) * Double(totalBeats))
                 }
@@ -236,32 +252,42 @@ private struct RulerTimeline: View {
         }
     }
 
-    /// A draggable selection edge: a line + grip with a wide touch zone. Works even
-    /// when not in Select mode (high priority over the scroll view).
-    private func edgeHandle(x: CGFloat, h: CGFloat, w: CGFloat, isLeft: Bool) -> some View {
+    /// Edge beat from base + live drag px, snapped to grid and clamped.
+    private func liveBeat(_ base: Double, _ dragPx: CGFloat?, _ w: CGFloat, lo: Double, hi: Double) -> Double {
+        guard let d = dragPx else { return base }
         let g = seq.quantizeGrid.beats
+        let raw = base + Double(d / max(0.001, w)) * Double(totalBeats)
+        let snapped = (raw / g).rounded() * g
+        return max(lo, min(hi, snapped))
+    }
+
+    private func band(_ a: Double, _ b: Double, w: CGFloat, h: CGFloat, color: Color, fill: Double) -> some View {
+        let x1 = CGFloat(a / Double(totalBeats)) * w
+        let x2 = CGFloat(b / Double(totalBeats)) * w
+        return Rectangle().fill(color.opacity(fill))
+            .frame(width: max(2, x2 - x1), height: h).position(x: (x1 + x2) / 2, y: h / 2)
+            .allowsHitTesting(false)
+    }
+
+    /// A wide press target (near-invisible) with a decorative line + knob that does
+    /// NOT hit-test. Press anywhere on it to drag the edge. High priority over scroll.
+    private func grabBar(beat: Double, w: CGFloat, h: CGFloat, color: Color,
+                         onDrag: @escaping (CGFloat) -> Void, onEnd: @escaping () -> Void) -> some View {
+        let x = CGFloat(beat / Double(totalBeats)) * w
         return ZStack {
-            Rectangle().fill(selBlue).frame(width: 2, height: h)
-            Capsule().fill(selBlue).frame(width: 7, height: 13).offset(y: -h / 2 + 7)   // grip knob
+            VStack(spacing: 0) {
+                Circle().fill(color).frame(width: 11, height: 11)
+                Capsule().fill(color).frame(width: 3).frame(maxHeight: .infinity)
+            }
+            .allowsHitTesting(false)
+            Color.white.opacity(0.001).frame(width: grabW, height: h).contentShape(Rectangle())
         }
-        .frame(width: 26, height: h)                 // wide touch target
-        .contentShape(Rectangle())
+        .frame(width: grabW, height: h)
         .position(x: x, y: h / 2)
         .highPriorityGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { v in
-                    let delta = Double(v.translation.width / w) * Double(totalBeats)
-                    if isLeft {
-                        if dragStartL == nil { dragStartL = seq.selStartBeat }
-                        let nb = min((dragStartL ?? 0) + delta, seq.selEndBeat - g)   // keep ≥1 grid wide
-                        seq.setSelection(startBeat: nb, endBeat: seq.selEndBeat, trackID: selectedTrackID)
-                    } else {
-                        if dragStartR == nil { dragStartR = seq.selEndBeat }
-                        let nb = max((dragStartR ?? 0) + delta, seq.selStartBeat + g)
-                        seq.setSelection(startBeat: seq.selStartBeat, endBeat: nb, trackID: selectedTrackID)
-                    }
-                }
-                .onEnded { _ in dragStartL = nil; dragStartR = nil }
+            DragGesture(minimumDistance: 1)
+                .onChanged { onDrag($0.translation.width) }
+                .onEnded { _ in onEnd() }
         )
     }
 }
