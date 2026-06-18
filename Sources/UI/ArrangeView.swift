@@ -16,6 +16,7 @@ struct ArrangeView: View {
 
     @State private var ppb: CGFloat = 0            // points per beat; 0 = fit to width
     @State private var pinchStartPPB: CGFloat?
+    @State private var selectMode = false          // marquee tool: drag selects/sets loop instead of scrolling
 
     private var totalBeats: Int { max(1, seq.loopBars * seq.beatsPerBar) }
 
@@ -56,11 +57,11 @@ struct ArrangeView: View {
                         // Zoom/scroll timeline column
                         ScrollView(.horizontal) {
                             VStack(spacing: 4) {
-                                RulerTimeline(seq: seq, totalBeats: totalBeats)
+                                RulerTimeline(seq: seq, totalBeats: totalBeats, selectMode: selectMode)
                                     .frame(width: contentW, height: rulerHeight)
                                 ForEach(model.tracks) { track in
                                     LaneTimelineView(track: track, seq: seq, totalBeats: totalBeats,
-                                                     loPitch: loPitch, hiPitch: hiPitch,
+                                                     loPitch: loPitch, hiPitch: hiPitch, selectMode: selectMode,
                                                      onSelect: { model.select(track) })
                                         .frame(width: contentW, height: laneHeight)
                                 }
@@ -74,6 +75,7 @@ struct ArrangeView: View {
                                     .onEnded { _ in pinchStartPPB = nil }
                             )
                         }
+                        .scrollDisabled(selectMode)   // let drags select/set-loop instead of scrolling
                     }
                 }
             }
@@ -97,26 +99,40 @@ struct ArrangeView: View {
     }
 
     private var editToolbar: some View {
-        HStack(spacing: 16) {
-            Button { seq.selectionAllTracks.toggle() } label: {
-                Text(seq.selectionAllTracks ? "ALL TRACKS" : "ONE TRACK")
-                    .etchedLabel(9, weight: .bold)
-                    .foregroundStyle(seq.selectionAllTracks ? Theme.orange : Theme.etchedSoft)
-            }
-            Divider().frame(height: 18)
-            tool("Undo", "arrow.uturn.backward", enabled: seq.canUndo) { seq.undo() }
-            tool("Cut", "scissors", enabled: seq.hasSelection) { model.editCut() }
-            tool("Copy", "doc.on.doc", enabled: seq.hasSelection) { model.editCopy() }
-            tool("Paste", "doc.on.clipboard", enabled: seq.hasClipboard) { model.editPaste() }
-            tool("Erase", "eraser", enabled: seq.hasSelection) { model.editErase() }
-            Spacer()
-            if seq.hasSelection {
-                Button { seq.clearSelection() } label: {
-                    Text("DESELECT").etchedLabel(9, soft: true, weight: .medium)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                // Marquee tool — when on, drag the timeline to select / set the loop.
+                Button { selectMode.toggle() } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: "selection.pin.in.out").font(.system(size: 15, weight: .semibold))
+                        Text("Select").font(Theme.mono(8, .semibold))
+                    }
+                    .foregroundStyle(selectMode ? Theme.orange : Theme.etched)
+                }
+                Button { seq.selectionAllTracks.toggle() } label: {
+                    Text(seq.selectionAllTracks ? "ALL" : "ONE")
+                        .etchedLabel(9, weight: .bold)
+                        .foregroundStyle(seq.selectionAllTracks ? Theme.orange : Theme.etchedSoft)
+                }
+                Divider().frame(height: 26)
+                tool("Undo", "arrow.uturn.backward", enabled: seq.canUndo) { seq.undo() }
+                tool("Cut", "scissors", enabled: seq.hasSelection) { model.editCut() }
+                tool("Copy", "doc.on.doc", enabled: seq.hasSelection) { model.editCopy() }
+                tool("Paste", "doc.on.clipboard", enabled: seq.hasClipboard) { model.editPaste() }
+                tool("Erase", "eraser", enabled: seq.hasSelection) { model.editErase() }
+                if seq.hasSelection {
+                    tool("Deselect", "xmark.circle", enabled: true) { seq.clearSelection() }
+                }
+                Divider().frame(height: 26)
+                tool("Loop In", "arrow.down.to.line", enabled: true) { seq.setLoopIn() }
+                tool("Loop Out", "arrow.up.to.line", enabled: true) { seq.setLoopOut() }
+                tool("Loop Sel", "repeat", enabled: seq.hasSelection) { seq.loopSelection() }
+                if seq.hasLoopRegion {
+                    tool("Clear Loop", "xmark", enabled: true) { seq.clearLoopRegion() }
                 }
             }
+            .padding(.horizontal, 14).padding(.vertical, 5)
         }
-        .padding(.horizontal, 14).padding(.vertical, 6)
         .background(Theme.rail)
     }
 
@@ -166,6 +182,7 @@ private struct LaneHeaderView: View {
 private struct RulerTimeline: View {
     @ObservedObject var seq: Sequencer
     let totalBeats: Int
+    var selectMode = false
 
     var body: some View {
         GeometryReader { geo in
@@ -187,6 +204,11 @@ private struct RulerTimeline: View {
                 Rectangle().fill(Theme.etched).frame(width: 1.5, height: h).position(x: px, y: h / 2)
             }
             .contentShape(Rectangle())
+            // Select mode: plain drag sets the loop region (scrolling is disabled).
+            .conditionalDrag(selectMode) { start, cur in
+                seq.setLoopRegion(startBeat: Double(start / w) * Double(totalBeats),
+                                  endBeat: Double(cur / w) * Double(totalBeats))
+            }
             .gesture(
                 LongPressGesture(minimumDuration: 0.25).sequenced(before: DragGesture(minimumDistance: 0))
                     .onChanged { val in
@@ -206,6 +228,22 @@ private struct RulerTimeline: View {
     }
 }
 
+/// Attach a plain horizontal-drag gesture (high priority) only when `active`, so
+/// in Select mode the timeline selects/sets-loop instead of scrolling.
+private extension View {
+    @ViewBuilder
+    func conditionalDrag(_ active: Bool, _ onDrag: @escaping (CGFloat, CGFloat) -> Void) -> some View {
+        if active {
+            self.highPriorityGesture(
+                DragGesture(minimumDistance: 3)
+                    .onChanged { v in onDrag(v.startLocation.x, v.location.x) }
+            )
+        } else {
+            self
+        }
+    }
+}
+
 // MARK: - Lane timeline (notes, selection, playhead) — observes its Track
 
 private struct LaneTimelineView: View {
@@ -214,6 +252,7 @@ private struct LaneTimelineView: View {
     let totalBeats: Int
     let loPitch: Int
     let hiPitch: Int
+    var selectMode = false
     let onSelect: () -> Void
 
     var body: some View {
@@ -248,6 +287,11 @@ private struct LaneTimelineView: View {
                 Rectangle().fill(Theme.etched.opacity(0.8)).frame(width: 1.5, height: h).position(x: px, y: h / 2)
             }
             .contentShape(Rectangle())
+            // Select mode: plain drag makes a selection (scrolling is disabled).
+            .conditionalDrag(selectMode) { start, cur in
+                seq.setSelection(startBeat: Double(start / w) * Double(totalBeats),
+                                 endBeat: Double(cur / w) * Double(totalBeats), trackID: track.id)
+            }
             .gesture(
                 LongPressGesture(minimumDuration: 0.25).sequenced(before: DragGesture(minimumDistance: 0))
                     .onChanged { val in

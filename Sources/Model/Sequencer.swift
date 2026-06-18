@@ -109,6 +109,22 @@ final class Sequencer: ObservableObject {
     }
     func clearLoopRegion() { loopStartBeat = 0; loopEndBeat = 0 }
 
+    /// Loop In/Out at the playhead, and loop the current selection — reliable
+    /// alternatives to dragging the ruler.
+    func setLoopIn() {
+        let s = min(max(0, snapBeat(positionBeats)), totalBeats)
+        loopStartBeat = s
+        if loopEndBeat <= s { loopEndBeat = min(totalBeats, s + Double(beatsPerBar)) }
+    }
+    func setLoopOut() {
+        let e = min(max(0, snapBeat(positionBeats)), totalBeats)
+        if e > loopStartBeat { loopEndBeat = e }
+    }
+    func loopSelection() {
+        guard hasSelection else { return }
+        setLoopRegion(startBeat: selStartBeat, endBeat: selEndBeat)
+    }
+
     func setSelection(startBeat: Double, endBeat: Double, trackID: UUID?) {
         selStartBeat = min(max(0, snapBeat(min(startBeat, endBeat))), totalBeats)
         selEndBeat = min(max(0, snapBeat(max(startBeat, endBeat))), totalBeats)
