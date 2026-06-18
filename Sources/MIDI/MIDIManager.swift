@@ -53,6 +53,9 @@ final class MIDIManager: ObservableObject {
     /// Parsed message + the source port name (so the app can route the KeyLab's
     /// DAW/MCU port to controller handling instead of the note path).
     var onMessage: ((MIDIMessage, String) -> Void)?
+    /// Fired (main queue) whenever the CoreMIDI setup changes and sources are
+    /// reconnected — the app re-sends LED feedback to (re)wake the KeyLab DAW port.
+    var onSetupChanged: (() -> Void)?
 
     /// Raw-MIDI monitor (M5). When `isMonitoring` is on, every parsed message is
     /// captured (tagged with its source port) into `monitorEntries`, newest last.
@@ -134,6 +137,7 @@ final class MIDIManager: ObservableObject {
             names.append(nm)
         }
         sourceNames = names
+        onSetupChanged?()   // KeyLab may have just appeared — re-send LED feedback to wake its DAW port
     }
 
     /// CoreMIDI-thread helper: copy all UMP words out of the event list (touches

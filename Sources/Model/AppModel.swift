@@ -27,6 +27,12 @@ final class AppModel: ObservableObject {
         midi.onMessage = { [weak self] message, source in
             self?.handleIncoming(message, from: source)
         }
+        // When the KeyLab (re)appears in CoreMIDI, re-send LED feedback to wake its
+        // dormant DAW port — otherwise it won't send until another host opens it.
+        midi.onSetupChanged = { [weak self] in
+            self?.updateSelectLEDs()
+            self?.updateButtonLEDs()
+        }
         midi.start()
         updateSelectLEDs()   // output port exists now; reflect the initial selection
 
@@ -557,14 +563,24 @@ final class AppModel: ObservableObject {
     private static let selectLEDBase: UInt8 = 0x22   // Select 1 → 0x22, Select 2 → 0x23, …
 
     /// Reflect track colors (and the white selection) on the KeyLab Select buttons.
+    ///
+    /// In MCU/DAW mode the device keeps a Select LED *off* unless the host tells it
+    /// the LED is lit via the MCU NoteOn feedback — so a bare color SysEx only flashes
+    /// then gets blanked on the firmware's next refresh. We therefore hold the MCU
+    /// "on" state (NoteOn 127) for every track button AND paint the color on top, so
+    /// the LED stays lit and keeps our hue.
     func updateSelectLEDs() {
         let selected = tracks.firstIndex { $0.id == selectedTrackID }
         for i in 0..<8 {
+            let hasTrack = i < tracks.count
+            // 1) MCU lit-state: keep every track button on so the firmware doesn't blank it.
+            midi.send([0x90, UInt8(24 + i), hasTrack ? 127 : 0], toPortNamed: "DAW")
+            // 2) Arturia colour paint on the same button (LED ID 0x22+).
             let led = Self.selectLEDBase + UInt8(i)
             var r: UInt8 = 0, g: UInt8 = 0, b: UInt8 = 0
             if i == selected {
                 r = 0x1F; g = 0x1F; b = 0x1F                 // selected → bright white
-            } else if i < tracks.count {
+            } else if hasTrack {
                 (r, g, b) = Self.led5bit(tracks[i].color)    // unselected → its track color (dimmed)
             }
             midi.send([0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x02, 0x00, 0x16, led, r, g, b, 0xF7],
