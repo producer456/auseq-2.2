@@ -202,6 +202,32 @@ struct WoodDeck: View {
     }
 }
 
+/// Thin wedge filling the gap outside a rounded top-left corner — clip a WoodDeck
+/// to it and the wood appears to curve down around the arranger's corner.
+struct CornerFilletTL: Shape {
+    func path(in rect: CGRect) -> Path {
+        let r = min(rect.width, rect.height)
+        var p = Path()
+        p.move(to: .zero)                                   // sharp corner
+        p.addLine(to: CGPoint(x: r, y: 0))                  // along the top
+        p.addArc(center: CGPoint(x: r, y: r), radius: r,    // round corner arc
+                 startAngle: .degrees(-90), endAngle: .degrees(180), clockwise: true)
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Wood wedge for an arranger top corner (mirror for the right side).
+struct WoodFillet: View {
+    var tone: WoodTone
+    var mirrored = false
+    var body: some View {
+        WoodDeck(tone: tone)
+            .clipShape(CornerFilletTL())
+            .scaleEffect(x: mirrored ? -1 : 1, y: 1, anchor: .center)
+    }
+}
+
 /// Recessed circular well that makes a control look milled/inlaid into the wood
 /// deck — dark carved interior, inner shadow up top, a raised wood lip below.
 struct WoodInlayCircle: ViewModifier {

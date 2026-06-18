@@ -95,11 +95,12 @@ struct ContentView: View {
             faceplate.ignoresSafeArea()
             VStack(spacing: 0) {
                 woodPanel
-                panelGroove
                 contentColumn
-                    .recessedPanel(radius: 16)                               // display module sunk into the chassis
+                    .recessedPanel(radius: 18)                               // display module sunk into the chassis
+                    // Wood curves down around the arranger's top corners.
+                    .overlay(alignment: .topLeading) { WoodFillet(tone: woodTone).frame(width: 18, height: 18) }
+                    .overlay(alignment: .topTrailing) { WoodFillet(tone: woodTone, mirrored: true).frame(width: 18, height: 18) }
                     .padding(.horizontal, 12)
-                    .padding(.top, 10)
                     .padding(.bottom, keyboardVisible ? 6 : 12)
                 if keyboardVisible {
                     PianoKeyboardView(model: model, height: 190)
