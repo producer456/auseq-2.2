@@ -110,12 +110,12 @@ struct ArrangeView: View {
                         Image(systemName: "selection.pin.in.out").font(.system(size: 15, weight: .semibold))
                         Text("Select").font(Theme.mono(8, .semibold))
                     }
-                    .foregroundStyle(selectMode ? Theme.orange : Theme.etched)
+                    .foregroundStyle(selectMode ? Theme.orange : (dark ? Color.white : Theme.etched))
                 }
                 Button { seq.selectionAllTracks.toggle() } label: {
                     Text(seq.selectionAllTracks ? "ALL" : "ONE")
                         .etchedLabel(9, weight: .bold)
-                        .foregroundStyle(seq.selectionAllTracks ? Theme.orange : Theme.etchedSoft)
+                        .foregroundStyle(seq.selectionAllTracks ? Theme.orange : (dark ? Color.white.opacity(0.6) : Theme.etchedSoft))
                 }
                 Divider().frame(height: 26)
                 tool("Undo", "arrow.uturn.backward", enabled: seq.canUndo) { seq.undo() }
@@ -136,7 +136,7 @@ struct ArrangeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 5)
         }
-        .background(Theme.rail)
+        .background(dark ? Color.black : Theme.rail)   // black in dark mode → no square corner under the toolbar
     }
 
     private func tool(_ title: String, _ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -145,7 +145,8 @@ struct ArrangeView: View {
                 Image(systemName: icon).font(.system(size: 15, weight: .semibold))
                 Text(title).font(Theme.mono(8, .semibold))
             }
-            .foregroundStyle(enabled ? Theme.etched : Theme.etchedSoft.opacity(0.5))
+            .foregroundStyle(enabled ? (dark ? Color.white : Theme.etched)
+                                     : (dark ? Color.white.opacity(0.28) : Theme.etchedSoft.opacity(0.5)))
         }
         .disabled(!enabled)
     }

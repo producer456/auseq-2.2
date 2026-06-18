@@ -99,9 +99,9 @@ struct ContentView: View {
                 // bottom borders and a recessed bevel; the wood band above curves its
                 // bottom corners inward to meet it, and wood wraps the top corners.
                 contentColumn
-                    .recessedPanel(radius: 16)
-                    .overlay(alignment: .topLeading) { WoodFillet(tone: woodTone).frame(width: 16, height: 16) }
-                    .overlay(alignment: .topTrailing) { WoodFillet(tone: woodTone, mirrored: true).frame(width: 16, height: 16) }
+                    .recessedPanel(radius: 20)
+                    .overlay(alignment: .topLeading) { WoodFillet(tone: woodTone).frame(width: 20, height: 20) }
+                    .overlay(alignment: .topTrailing) { WoodFillet(tone: woodTone, mirrored: true).frame(width: 20, height: 20) }
                     .padding(.horizontal, 14)
                     .padding(.bottom, keyboardVisible ? 6 : 14)
                 if keyboardVisible {
